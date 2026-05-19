@@ -1,0 +1,141 @@
+"use client";
+
+import { useState } from "react";
+import { createClient } from "@/lib/supabase-client";
+import { useRouter } from "next/navigation";
+import { Mail, Phone, UserRound, LockKeyhole } from "lucide-react";
+
+function onlyDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function authEmailFromPhone(phone: string) {
+  return `${onlyDigits(phone)}@clientes.barbershop.local`;
+}
+
+export function AuthForm({ mode }: { mode: "login" | "signup" }) {
+  const router = useRouter();
+  const supabase = createClient();
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit(formData: FormData) {
+    setLoading(true);
+    setMessage("");
+
+    const login = String(formData.get("login") || "").trim();
+    const password = String(formData.get("password") || "");
+    const fullName = String(formData.get("fullName") || "").trim();
+    const phone = onlyDigits(String(formData.get("phone") || ""));
+    const gmail = String(formData.get("gmail") || "").trim().toLowerCase();
+
+    if (mode === "signup") {
+      if (!fullName || phone.length < 10 || !password) {
+        setLoading(false);
+        setMessage("Preencha nome, telefone com DDD e senha.");
+        return;
+      }
+
+      const result = await supabase.auth.signUp({
+        email: authEmailFromPhone(phone),
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            phone,
+            gmail,
+            public_email: gmail,
+          },
+        },
+      });
+
+      setLoading(false);
+
+      if (result.error) {
+        setMessage(result.error.message);
+        return;
+      }
+
+      router.push("/login?cadastro=ok");
+      router.refresh();
+      return;
+    }
+
+    if (!login || !password) {
+      setLoading(false);
+      setMessage("Informe seu telefone ou Gmail e sua senha.");
+      return;
+    }
+
+    const email = login.includes("@") ? login.toLowerCase() : authEmailFromPhone(login);
+    const result = await supabase.auth.signInWithPassword({ email, password });
+
+    setLoading(false);
+
+    if (result.error) {
+      setMessage("Login não encontrado ou senha incorreta.");
+      return;
+    }
+
+    router.push("/agendar");
+    router.refresh();
+  }
+
+  return (
+    <form action={submit} className="card mx-auto grid max-w-xl gap-4 p-6 md:p-8">
+      {mode === "signup" ? (
+        <>
+          <div className="rounded-3xl border border-gold/20 bg-gold/10 p-4 text-sm text-cream">
+            O telefone é obrigatório e será seu login principal. O Gmail é opcional, só para contato.
+          </div>
+
+          <div>
+            <label className="label">Nome completo</label>
+            <div className="input-wrap mt-2">
+              <UserRound size={18} />
+              <input name="fullName" required placeholder="Seu nome" />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Número de telefone / WhatsApp</label>
+            <div className="input-wrap mt-2">
+              <Phone size={18} />
+              <input name="phone" inputMode="tel" required placeholder="27999998888" minLength={10} />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Gmail ou e-mail, opcional</label>
+            <div className="input-wrap mt-2">
+              <Mail size={18} />
+              <input type="email" name="gmail" placeholder="voce@gmail.com" />
+            </div>
+          </div>
+        </>
+      ) : (
+        <div>
+          <label className="label">Telefone ou Gmail</label>
+          <div className="input-wrap mt-2">
+            <Phone size={18} />
+            <input name="login" required placeholder="27999998888 ou voce@gmail.com" />
+          </div>
+        </div>
+      )}
+
+      <div>
+        <label className="label">Senha</label>
+        <div className="input-wrap mt-2">
+          <LockKeyhole size={18} />
+          <input type="password" name="password" required minLength={6} placeholder="Mínimo 6 caracteres" />
+        </div>
+      </div>
+
+      {message && <p className="rounded-2xl border border-red-300/20 bg-red-300/10 p-3 text-sm text-red-100">{message}</p>}
+
+      <button disabled={loading} className="btn-primary">
+        {loading ? "Aguarde..." : mode === "login" ? "Entrar" : "Criar conta e agendar"}
+      </button>
+    </form>
+  );
+}

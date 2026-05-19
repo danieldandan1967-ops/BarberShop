@@ -1,0 +1,152 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase-client";
+import type { Barber, Service } from "@/lib/types";
+import { CalendarDays, Clock3, Scissors, Sparkles } from "lucide-react";
+
+const BASE_SLOTS = [
+  "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
+  "12:00", "12:30", "13:00", "13:30", "14:00", "14:30",
+  "15:00", "15:30", "16:00", "16:30", "17:00", "17:30",
+  "18:00", "18:30", "19:00", "19:30",
+];
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function BookingForm({
+  services,
+  barbers,
+  action,
+}: {
+  services: Service[];
+  barbers: Barber[];
+  action: (formData: FormData) => Promise<void>;
+}) {
+  const supabase = useMemo(() => createClient(), []);
+  const [serviceId, setServiceId] = useState(services[0]?.id || "");
+  const [barberId, setBarberId] = useState(barbers[0]?.id || "");
+  const [date, setDate] = useState(todayIso());
+  const [selectedTime, setSelectedTime] = useState("");
+  const [booked, setBooked] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+  const selectedService = useMemo(
+    () => services.find((service) => service.id === serviceId),
+    [services, serviceId]
+  );
+
+  useEffect(() => {
+    async function loadBookedSlots() {
+      if (!barberId || !date) return;
+      setLoadingSlots(true);
+      setSelectedTime("");
+
+      const { data } = await supabase.rpc("get_booked_slots", {
+        p_barber_id: barberId,
+        p_appointment_date: date,
+      });
+
+      setBooked((data || []).map((item: any) => String(item.appointment_time).slice(0, 5)));
+      setLoadingSlots(false);
+    }
+
+    loadBookedSlots();
+  }, [supabase, barberId, date]);
+
+  return (
+    <form action={action} className="card grid gap-6 p-6 md:p-8">
+      <input type="hidden" name="time" value={selectedTime} />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <label className="label">Serviço</label>
+          <div className="input-wrap mt-2">
+            <Scissors size={18} />
+            <select name="serviceId" required value={serviceId} onChange={(event) => setServiceId(event.target.value)}>
+              {services.map((service) => (
+                <option key={service.id} value={service.id}>
+                  {service.name} — R$ {Number(service.price).toFixed(2).replace(".", ",")}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="label">Profissional</label>
+          <div className="input-wrap mt-2">
+            <Sparkles size={18} />
+            <select name="barberId" required value={barberId} onChange={(event) => setBarberId(event.target.value)}>
+              {barbers.map((barber) => (
+                <option key={barber.id} value={barber.id}>{barber.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {selectedService && (
+        <div className="rounded-3xl border border-gold/20 bg-gradient-to-r from-gold/15 to-white/5 p-5">
+          <p className="text-sm uppercase tracking-[.25em] text-goldLight">Selecionado</p>
+          <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-2xl font-black">{selectedService.name}</h3>
+              <p className="text-muted">{selectedService.description || "Atendimento profissional com horário reservado."}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-3xl font-black text-goldLight">R$ {Number(selectedService.price).toFixed(2).replace(".", ",")}</p>
+              <p className="text-sm text-muted">{selectedService.duration_minutes} minutos</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <label className="label">Data</label>
+        <div className="input-wrap mt-2">
+          <CalendarDays size={18} />
+          <input name="date" required type="date" min={todayIso()} value={date} onChange={(event) => setDate(event.target.value)} />
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <label className="label">Horários disponíveis</label>
+          {loadingSlots && <span className="text-xs font-bold text-muted">Carregando...</span>}
+        </div>
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+          {BASE_SLOTS.map((slot) => {
+            const unavailable = booked.includes(slot);
+            const active = selectedTime === slot;
+            return (
+              <button
+                key={slot}
+                type="button"
+                disabled={unavailable || loadingSlots}
+                onClick={() => setSelectedTime(slot)}
+                className={`slot-button ${active ? "slot-active" : ""} ${unavailable ? "slot-disabled" : ""}`}
+              >
+                <Clock3 size={15} /> {slot}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-sm text-muted">
+          Horários ocupados ficam bloqueados e não podem ser selecionados.
+        </p>
+      </div>
+
+      <div>
+        <label className="label">Observação</label>
+        <textarea name="notes" className="input mt-2 min-h-32" placeholder="Ex: degradê baixo, barba só alinhar..." />
+      </div>
+
+      <button disabled={!selectedTime} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40">
+        {selectedTime ? `Confirmar pedido para ${selectedTime}` : "Escolha um horário"}
+      </button>
+    </form>
+  );
+}
